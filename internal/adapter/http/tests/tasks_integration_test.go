@@ -336,6 +336,20 @@ func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsBadRequestWhenPayloadIsInv
 	s.Require().Equal("Invalid task payload", got.ErrDetails.Message)
 }
 
+func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsBadRequestWhenStatusIsNull() {
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{"status":null}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
+	s.Require().Equal("Invalid task payload", got.ErrDetails.Message)
+}
+
 func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsNotFoundWhenTaskDoesNotExist() {
 	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/999999", strings.NewReader(`{"title":"x"}`))
 	req.Header.Set("Content-Type", "application/json")

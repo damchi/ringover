@@ -2,8 +2,10 @@ package db
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 
-	_ "github.com/go-sql-driver/mysql"
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 
 	"ringover/internal/config"
@@ -15,17 +17,28 @@ func ConnectDB(conf *config.Config) (*sqlx.DB, error) {
 		params = "parseTime=true&multiStatements=true"
 	}
 
-	dsn := fmt.Sprintf(
-		"%s:%s@tcp(%s:%s)/%s?%s",
-		conf.DbUser,
-		conf.DbPassword,
-		conf.DbHost,
-		conf.DbPort,
-		conf.DbName,
-		params,
-	)
+	dsnConfig := mysqlDriver.NewConfig()
+	dsnConfig.User = conf.DbUser
+	dsnConfig.Passwd = conf.DbPassword
+	dsnConfig.Net = "tcp"
+	dsnConfig.Addr = net.JoinHostPort(conf.DbHost, conf.DbPort)
+	dsnConfig.DBName = conf.DbName
 
-	db, err := sqlx.Connect("mysql", dsn)
+	queryParams, err := url.ParseQuery(params)
+	if err != nil {
+		return nil, fmt.Errorf("invalid mysql params: %w", err)
+	}
+	if len(queryParams) > 0 {
+		dsnConfig.Params = make(map[string]string, len(queryParams))
+		for key, values := range queryParams {
+			if len(values) == 0 {
+				continue
+			}
+			dsnConfig.Params[key] = values[len(values)-1]
+		}
+	}
+
+	db, err := sqlx.Connect("mysql", dsnConfig.FormatDSN())
 	if err != nil {
 		return nil, err
 	}

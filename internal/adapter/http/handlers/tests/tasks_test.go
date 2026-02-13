@@ -622,6 +622,28 @@ func TestTaskHandler_UpdateTask_InvalidPayload(t *testing.T) {
 	require.Equal(t, "Invalid task payload", got.ErrDetails.Message)
 }
 
+func TestTaskHandler_UpdateTask_InvalidNullStatus(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.PATCH("/api/tasks/:id", middleware.LanguageMiddleware(), handler.UpdateTask)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{"status":null}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusBadRequest, got.ErrDetails.Code)
+	require.Equal(t, "Invalid task payload", got.ErrDetails.Message)
+}
+
 func TestTaskHandler_UpdateTask_NotFound(t *testing.T) {
 	serviceMock := new(taskServiceMock)
 	serviceMock.On("UpdateTask", mock.Anything, uint64(999), mock.Anything).Return(domain.Task{}, domain.ErrTaskNotFound).Once()

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"ringover/internal/core/ports"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,14 +25,26 @@ WHERE t.parent_task_id IS NULL
 ORDER BY t.id;
 `
 
-const listRootSubTasksQuery = `
-SELECT
-  t.*,
-  c.name AS category_name
-FROM tasks t
-LEFT JOIN categories c ON c.id = t.category_id
-WHERE t.parent_task_id = ?
-ORDER BY t.id;
+const listSubtasksTreeQuery = `
+WITH RECURSIVE subtasks AS (
+  SELECT
+    t.*,
+    c.name AS category_name
+  FROM tasks t
+  LEFT JOIN categories c ON c.id = t.category_id
+  WHERE t.parent_task_id = ?
+
+  UNION ALL
+
+  SELECT
+    t.*,
+    c.name AS category_name
+  FROM tasks t
+  JOIN subtasks s ON t.parent_task_id = s.id
+  LEFT JOIN categories c ON c.id = t.category_id
+)
+SELECT *
+FROM subtasks;
 `
 
 const taskExistsQuery = `
@@ -382,22 +395,38 @@ func (r *TaskRepository) getParentTaskID(ctx context.Context, taskID uint64) (ui
 
 func (r *TaskRepository) listSubtasksTree(ctx context.Context, parentTaskID uint64) ([]domain.Task, error) {
 	var rows []taskRow
-	if err := r.db.SelectContext(ctx, &rows, listRootSubTasksQuery, parentTaskID); err != nil {
+	if err := r.db.SelectContext(ctx, &rows, listSubtasksTreeQuery, parentTaskID); err != nil {
 		return nil, err
 	}
-
-	tasks := make([]domain.Task, 0, len(rows))
-	for _, row := range rows {
-		task := mapTaskRowToDomainTask(row)
-		subtasks, err := r.listSubtasksTree(ctx, task.ID)
-		if err != nil {
-			return nil, err
-		}
-		task.Subtasks = subtasks
-		tasks = append(tasks, task)
+	if len(rows) == 0 {
+		return []domain.Task{}, nil
 	}
 
-	return tasks, nil
+	childrenByParent := make(map[uint64][]taskRow, len(rows))
+	for _, row := range rows {
+		parentID := uint64(row.ParentTaskID.Int64)
+		childrenByParent[parentID] = append(childrenByParent[parentID], row)
+	}
+
+	for parentID := range childrenByParent {
+		sort.Slice(childrenByParent[parentID], func(i, j int) bool {
+			return childrenByParent[parentID][i].ID < childrenByParent[parentID][j].ID
+		})
+	}
+
+	var buildSubtasks func(currentParentID uint64) []domain.Task
+	buildSubtasks = func(currentParentID uint64) []domain.Task {
+		children := childrenByParent[currentParentID]
+		subtasks := make([]domain.Task, 0, len(children))
+		for _, child := range children {
+			task := mapTaskRowToDomainTask(child)
+			task.Subtasks = buildSubtasks(child.ID)
+			subtasks = append(subtasks, task)
+		}
+		return subtasks
+	}
+
+	return buildSubtasks(parentTaskID), nil
 }
 
 func (r *TaskRepository) getTaskByID(ctx context.Context, taskID uint64) (domain.Task, error) {
