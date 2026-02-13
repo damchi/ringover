@@ -1,15 +1,16 @@
 package main
 
 import (
+	dbadapter "ringover/internal/adapter/db"
 	"ringover/pkg/translator"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	dbadapter "ringover/internal/adapter/db"
 	httpadapter "ringover/internal/adapter/http"
 	"ringover/internal/adapter/http/handlers"
 	httpmiddleware "ringover/internal/adapter/http/middleware"
+	appservice "ringover/internal/app/service"
 	"ringover/internal/config"
 )
 
@@ -45,7 +46,12 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery(), httpmiddleware.GinZapMiddleware(logger))
 	healthHandler := handlers.NewHealthHandler(db)
-	httpadapter.RegisterRoutes(r, healthHandler)
+
+	taskRepository := dbadapter.NewTaskRepository(db)
+	taskService := appservice.NewTaskService(taskRepository)
+	taskHandler := handlers.NewTaskHandler(taskService)
+
+	httpadapter.RegisterRoutes(r, healthHandler, taskHandler)
 
 	port := cfg.AppPort
 	if port == "" {

@@ -9,7 +9,54 @@ servers:
 tags:
   - name: Health
     description: Service health endpoints
+  - name: Tasks
+    description: Task endpoints
 paths:
+  /api/tasks:
+    get:
+      tags:
+        - Tasks
+      summary: List root tasks with their category
+      description: Returns root tasks only (`parent_task_id IS NULL`) without subtasks, including category data via join.
+      operationId: listRootTasks
+      parameters:
+        - in: header
+          name: Accept-Language
+          required: false
+          schema:
+            type: string
+            example: en
+          description: Language used to translate error messages.
+      responses:
+        "200":
+          description: Root tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskItem"
+              example:
+                - id: 1
+                  title: Implémenter API Auth
+                  status: in_progress
+                  priority: 3
+                  due_date: "2025-08-20"
+                  created_at: "2026-02-13T10:20:30Z"
+                  updated_at: "2026-02-13T10:20:30Z"
+                  category:
+                    id: 1
+                    name: Backend
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 500
+                  message: failed to list root tasks
   /api/health:
     get:
       tags:
@@ -120,3 +167,77 @@ components:
           description: Language resolved from `Accept-Language` middleware.
         status:
           $ref: "#/components/schemas/HealthServices"
+    TaskCategory:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+        name:
+          type: string
+    TaskItem:
+      type: object
+      required:
+        - id
+        - title
+        - status
+        - priority
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - todo
+            - in_progress
+            - done
+        priority:
+          type: integer
+        due_date:
+          type: string
+          nullable: true
+          example: "2025-08-20"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-02-13T10:20:30Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-02-13T10:20:30Z"
+        category:
+          allOf:
+            - $ref: "#/components/schemas/TaskCategory"
+          nullable: true
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+          example: 500
+        message:
+          type: string
+          example: failed to list root tasks
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"

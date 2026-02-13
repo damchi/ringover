@@ -17,7 +17,7 @@ ifneq ($(strip $(MYSQL_PARAMS)),)
 MYSQL_DSN := $(MYSQL_DSN)?$(MYSQL_PARAMS)
 endif
 
-.PHONY: check-requirements start logs stop kill migrate-new migrate-up migrate-down
+.PHONY: check-requirements start logs stop kill migrate-new migrate-up migrate-down test-unit test-integration test-all
 
 check-requirements:
 	@command -v docker >/dev/null 2>&1 || { echo "ERROR: docker is not installed."; exit 1; }
@@ -68,3 +68,11 @@ migrate-up:
 
 migrate-down:
 	$(MIGRATE) -database '$(MYSQL_DSN)' -path db/migrations down
+
+test-unit:
+	go test ./...
+
+test-integration:
+	go test -tags=integration ./internal/adapter/http/tests -count=1
+
+test-all: test-unit test-integration

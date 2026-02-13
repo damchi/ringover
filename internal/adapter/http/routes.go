@@ -7,12 +7,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterRoutes(r *gin.Engine, healthHandler *handlers.HealthHandler) {
+func RegisterRoutes(r *gin.Engine, healthHandler *handlers.HealthHandler, taskHandler *handlers.TaskHandler) {
 	api := r.Group("/api")
 	api.Use(middleware.LanguageMiddleware())
 	{
 		api.GET("/health", healthHandler.CheckHealth)
 		api.GET("/health/report", healthHandler.CheckHealthReport)
+		api.GET("/tasks", taskHandler.ListRootTasks)
 	}
-
 }

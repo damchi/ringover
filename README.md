@@ -77,17 +77,41 @@ Stop and remove everything (containers, network, volumes):
 make kill
 ```
 
+Run tests:
+
+```bash
+make test-unit
+make test-integration
+make test-all
+```
+
 ## Health Endpoints
 
 - `GET /api/health`
 - `GET /api/health/report`
+
+## Task Endpoint
+
+- `GET /api/tasks`
+
+Returns root tasks only (`parent_task_id IS NULL`) with their category.
+`Accept-Language` can be provided to localize error messages.
 
 Example:
 
 ```bash
 curl http://127.0.0.1:8080/api/health
 curl -H "Accept-Language: fr" http://127.0.0.1:8080/api/health/report
+curl http://127.0.0.1:8080/api/tasks
 ```
+
+## Tests
+
+- Unit tests: `make test-unit`
+- Integration tests: `make test-integration`
+- Full test run: `make test-all`
+
+Integration tests use a dedicated MySQL test database (`*_test`) and delete it at the end of the suite.
 
 ## OpenAPI
 

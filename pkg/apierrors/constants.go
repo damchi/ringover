@@ -1,3 +1,5 @@
 package apierrors
 
-const ()
+const (
+	MsgFailListTask = "errorListTask"
+)
