@@ -19,4 +19,8 @@ func (s *TaskService) ListRootTasks(ctx context.Context) ([]domain.Task, error) 
 	return s.taskRepository.ListRootTasks(ctx)
 }
 
+func (s *TaskService) ListRootSubtasks(ctx context.Context, taskID uint64) ([]domain.Task, error) {
+	return s.taskRepository.ListRootSubTasks(ctx, taskID)
+}
+
 var _ ports.TaskService = (*TaskService)(nil)

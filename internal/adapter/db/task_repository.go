@@ -21,6 +21,23 @@ WHERE t.parent_task_id IS NULL
 ORDER BY t.id;
 `
 
+const listRootSubTasksQuery = `
+SELECT
+  t.*,
+  c.name AS category_name
+FROM tasks t
+LEFT JOIN categories c ON c.id = t.category_id
+WHERE t.parent_task_id = ?
+ORDER BY t.id;
+`
+
+const taskExistsQuery = `
+SELECT id
+FROM tasks
+WHERE id = ?
+LIMIT 1;
+`
+
 type TaskRepository struct {
 	db *sqlx.DB
 }
@@ -55,6 +72,49 @@ func (r *TaskRepository) ListRootTasks(ctx context.Context) ([]domain.Task, erro
 	tasks := make([]domain.Task, 0, len(rows))
 	for _, row := range rows {
 		tasks = append(tasks, mapTaskRowToDomainTask(row))
+	}
+
+	return tasks, nil
+}
+
+func (r *TaskRepository) ListRootSubTasks(ctx context.Context, taskID uint64) ([]domain.Task, error) {
+	exists, err := r.taskExists(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, domain.ErrTaskNotFound
+	}
+
+	return r.listSubtasksTree(ctx, taskID)
+}
+
+func (r *TaskRepository) taskExists(ctx context.Context, taskID uint64) (bool, error) {
+	var id uint64
+	if err := r.db.GetContext(ctx, &id, taskExistsQuery, taskID); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (r *TaskRepository) listSubtasksTree(ctx context.Context, parentTaskID uint64) ([]domain.Task, error) {
+	var rows []taskRow
+	if err := r.db.SelectContext(ctx, &rows, listRootSubTasksQuery, parentTaskID); err != nil {
+		return nil, err
+	}
+
+	tasks := make([]domain.Task, 0, len(rows))
+	for _, row := range rows {
+		task := mapTaskRowToDomainTask(row)
+		subtasks, err := r.listSubtasksTree(ctx, task.ID)
+		if err != nil {
+			return nil, err
+		}
+		task.Subtasks = subtasks
+		tasks = append(tasks, task)
 	}
 
 	return tasks, nil

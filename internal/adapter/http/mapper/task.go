@@ -46,5 +46,9 @@ func ToTaskItem(task domain.Task) dto.TaskItem {
 		}
 	}
 
+	if len(task.Subtasks) > 0 {
+		item.Subtasks = ToTaskItems(task.Subtasks)
+	}
+
 	return item
 }

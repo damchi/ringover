@@ -1,5 +1,8 @@
 package apierrors
 
 const (
-	MsgFailListTask = "errorListTask"
+	MsgFailListTask     = "errorListTask"
+	MsgInvalidTaskID    = "invalidTaskID"
+	MsgTaskNotFound     = "taskNotFound"
+	MsgFailListSubtasks = "failListSubtasks"
 )

@@ -57,6 +57,68 @@ paths:
                 error:
                   code: 500
                   message: failed to list root tasks
+  /api/tasks/{id}/subtasks:
+    get:
+      tags:
+        - Tasks
+      summary: List complete subtasks hierarchy for a task
+      description: Returns all descendants of a task as a recursive tree.
+      operationId: listTaskSubtasksHierarchy
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+          description: Parent task id.
+        - in: header
+          name: Accept-Language
+          required: false
+          schema:
+            type: string
+            example: en
+          description: Language used to translate error messages.
+      responses:
+        "200":
+          description: Recursive subtasks hierarchy
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskItem"
+        "400":
+          description: Invalid task id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 400
+                  message: Invalid id
+        "404":
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 404
+                  message: Task not found
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 500
+                  message: Error fetching the subtasks
   /api/health:
     get:
       tags:
@@ -222,6 +284,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/TaskCategory"
           nullable: true
+        subtasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskItem"
     Error:
       type: object
       required:

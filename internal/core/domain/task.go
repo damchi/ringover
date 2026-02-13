@@ -21,4 +21,5 @@ type Task struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	Category    *Category
+	Subtasks    []Task
 }
