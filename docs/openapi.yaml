@@ -1,0 +1,122 @@
+openapi: 3.0.3
+info:
+  title: Ringover API
+  version: 0.1.0
+  description: OpenAPI documentation for the current Ringover API.
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+tags:
+  - name: Health
+    description: Service health endpoints
+paths:
+  /api/health:
+    get:
+      tags:
+        - Health
+      summary: Basic health check
+      operationId: checkHealth
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthBasic"
+              example:
+                app_name: Ringover_api
+                app_version: DEV
+                current_system_time: "2026-02-13 10:20:30"
+                message: ok
+        "500":
+          description: Service is degraded (database unavailable)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthBasic"
+              example:
+                app_name: Ringover_api
+                app_version: DEV
+                current_system_time: "2026-02-13 10:20:30"
+                message: down
+  /api/health/report:
+    get:
+      tags:
+        - Health
+      summary: Detailed health report
+      operationId: checkHealthReport
+      parameters:
+        - in: header
+          name: Accept-Language
+          required: false
+          schema:
+            type: string
+            example: fr
+          description: Language returned in `language` field. Defaults to `en`.
+      responses:
+        "200":
+          description: Detailed service status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthAdvanced"
+              example:
+                app_name: Ringover_api
+                app_version: DEV
+                current_system_time: "2026-02-13 10:20:30"
+                language: fr
+                status:
+                  mysql: ok
+components:
+  schemas:
+    HealthBasic:
+      type: object
+      required:
+        - app_name
+        - app_version
+        - current_system_time
+        - message
+      properties:
+        app_name:
+          type: string
+        app_version:
+          type: string
+        current_system_time:
+          type: string
+          description: Server local time formatted as `YYYY-MM-DD HH:MM:SS`.
+        message:
+          type: string
+          enum:
+            - ok
+            - down
+    HealthServices:
+      type: object
+      required:
+        - mysql
+      properties:
+        mysql:
+          type: string
+          enum:
+            - ok
+            - down
+    HealthAdvanced:
+      type: object
+      required:
+        - app_name
+        - app_version
+        - current_system_time
+        - language
+        - status
+      properties:
+        app_name:
+          type: string
+        app_version:
+          type: string
+        current_system_time:
+          type: string
+          description: Server local time formatted as `YYYY-MM-DD HH:MM:SS`.
+        language:
+          type: string
+          description: Language resolved from `Accept-Language` middleware.
+        status:
+          $ref: "#/components/schemas/HealthServices"
