@@ -57,6 +57,69 @@ paths:
                 error:
                   code: 500
                   message: failed to list root tasks
+    post:
+      tags:
+        - Tasks
+      summary: Create a task or subtask
+      description: Creates a root task when `parent_task_id` is omitted, otherwise creates a subtask under the given parent.
+      operationId: createTask
+      parameters:
+        - in: header
+          name: Accept-Language
+          required: false
+          schema:
+            type: string
+            example: en
+          description: Language used to translate error messages.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+            example:
+              title: Créer endpoint POST /tasks
+              status: todo
+              priority: 2
+              due_date: "2026-02-20"
+              category_id: 1
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskItem"
+        "400":
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 400
+                  message: Invalid task payload
+        "404":
+          description: Parent task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 404
+                  message: Task not found
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 500
+                  message: Failed to create task
   /api/tasks/{id}/subtasks:
     get:
       tags:
@@ -288,6 +351,45 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskItem"
+    CreateTaskRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          maxLength: 65535
+        status:
+          type: string
+          enum:
+            - todo
+            - in_progress
+            - done
+          description: Defaults to `todo`.
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 127
+          description: Defaults to `0`.
+        due_date:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-02-20"
+        parent_task_id:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+        category_id:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
     Error:
       type: object
       required:

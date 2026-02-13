@@ -3,9 +3,12 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"ringover/internal/core/ports"
+	"strings"
 	"time"
 
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 
 	"ringover/internal/core/domain"
@@ -37,6 +40,35 @@ FROM tasks
 WHERE id = ?
 LIMIT 1;
 `
+
+const createTaskQuery = `
+INSERT INTO tasks (
+  title,
+  description,
+  status,
+  priority,
+  due_date,
+  parent_task_id,
+  category_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+`
+
+const getTaskByIDQuery = `
+SELECT
+  t.*,
+  c.name AS category_name
+FROM tasks t
+LEFT JOIN categories c ON c.id = t.category_id
+WHERE t.id = ?
+LIMIT 1;
+`
+
+const (
+	mysqlSQLStateIntegrityConstraintViolation = "23000"
+	mysqlChildRowFKMessage                    = "cannot add or update a child row"
+	parentTaskFKConstraintName                = "fk_task_parent"
+)
 
 type TaskRepository struct {
 	db *sqlx.DB
@@ -89,6 +121,44 @@ func (r *TaskRepository) ListRootSubTasks(ctx context.Context, taskID uint64) ([
 	return r.listSubtasksTree(ctx, taskID)
 }
 
+func (r *TaskRepository) CreateTask(ctx context.Context, input domain.CreateTaskInput) (domain.Task, error) {
+	if input.ParentTaskID != nil {
+		exists, err := r.taskExists(ctx, *input.ParentTaskID)
+		if err != nil {
+			return domain.Task{}, err
+		}
+		if !exists {
+			return domain.Task{}, domain.ErrTaskNotFound
+		}
+	}
+
+	result, err := r.db.ExecContext(
+		ctx,
+		createTaskQuery,
+		input.Title,
+		input.Description,
+		string(input.Status),
+		input.Priority,
+		input.DueDate,
+		input.ParentTaskID,
+		input.CategoryID,
+	)
+	if err != nil {
+		// Handle race condition where parent was deleted between existence check and insert.
+		if isParentForeignKeyError(err) {
+			return domain.Task{}, domain.ErrTaskNotFound
+		}
+		return domain.Task{}, err
+	}
+
+	insertedID, err := result.LastInsertId()
+	if err != nil {
+		return domain.Task{}, err
+	}
+
+	return r.getTaskByID(ctx, uint64(insertedID))
+}
+
 func (r *TaskRepository) taskExists(ctx context.Context, taskID uint64) (bool, error) {
 	var id uint64
 	if err := r.db.GetContext(ctx, &id, taskExistsQuery, taskID); err != nil {
@@ -118,6 +188,35 @@ func (r *TaskRepository) listSubtasksTree(ctx context.Context, parentTaskID uint
 	}
 
 	return tasks, nil
+}
+
+func (r *TaskRepository) getTaskByID(ctx context.Context, taskID uint64) (domain.Task, error) {
+	var row taskRow
+	if err := r.db.GetContext(ctx, &row, getTaskByIDQuery, taskID); err != nil {
+		if err == sql.ErrNoRows {
+			return domain.Task{}, domain.ErrTaskNotFound
+		}
+		return domain.Task{}, err
+	}
+
+	return mapTaskRowToDomainTask(row), nil
+}
+
+func isParentForeignKeyError(err error) bool {
+	var mysqlErr *mysqlDriver.MySQLError
+	if !errors.As(err, &mysqlErr) {
+		return false
+	}
+	if string(mysqlErr.SQLState[:]) != mysqlSQLStateIntegrityConstraintViolation {
+		return false
+	}
+
+	message := strings.ToLower(mysqlErr.Message)
+	if !strings.Contains(message, mysqlChildRowFKMessage) {
+		return false
+	}
+
+	return strings.Contains(message, parentTaskFKConstraintName)
 }
 
 func mapTaskRowToDomainTask(row taskRow) domain.Task {

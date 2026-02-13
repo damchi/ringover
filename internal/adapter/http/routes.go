@@ -13,6 +13,7 @@ func RegisterRoutes(r *gin.Engine, healthHandler *handlers.HealthHandler, taskHa
 	{
 		api.GET("/health", healthHandler.CheckHealth)
 		api.GET("/health/report", healthHandler.CheckHealthReport)
+		api.POST("/tasks", taskHandler.CreateTask)
 		api.GET("/tasks", taskHandler.ListRootTasks)
 		api.GET("/tasks/:id/subtasks", taskHandler.ListRootSubTasks)
 	}

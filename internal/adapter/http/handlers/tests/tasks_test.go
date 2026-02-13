@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +44,16 @@ func (m *taskServiceMock) ListRootSubtasks(ctx context.Context, taskID uint64) (
 		tasks = value.([]domain.Task)
 	}
 	return tasks, args.Error(1)
+}
+
+func (m *taskServiceMock) CreateTask(ctx context.Context, input domain.CreateTaskInput) (domain.Task, error) {
+	args := m.Called(ctx, input)
+
+	var task domain.Task
+	if value := args.Get(0); value != nil {
+		task = value.(domain.Task)
+	}
+	return task, args.Error(1)
 }
 
 func TestTaskHandler_ListRootTasks_Success(t *testing.T) {
@@ -252,5 +263,224 @@ func TestTaskHandler_ListRootSubTasks_Error(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, http.StatusInternalServerError, got.ErrDetails.Code)
 	require.Equal(t, "Error fetching the subtasks", got.ErrDetails.Message)
+	serviceMock.AssertExpectations(t)
+}
+
+func TestTaskHandler_CreateTask_Success(t *testing.T) {
+	createdAt := time.Date(2026, 2, 13, 10, 20, 30, 0, time.UTC)
+	updatedAt := time.Date(2026, 2, 13, 11, 20, 30, 0, time.UTC)
+	dueDate := time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC)
+
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("CreateTask", mock.Anything, mock.MatchedBy(func(input domain.CreateTaskInput) bool {
+		if input.Title != "Build interview API" {
+			return false
+		}
+		if input.Status != domain.TaskStatusInProgress {
+			return false
+		}
+		if input.Priority != 3 {
+			return false
+		}
+		if input.DueDate == nil {
+			return false
+		}
+		return input.DueDate.Format("2006-01-02") == "2026-02-20"
+	})).Return(
+		domain.Task{
+			ID:        10,
+			Title:     "Build interview API",
+			Status:    domain.TaskStatusInProgress,
+			Priority:  3,
+			DueDate:   &dueDate,
+			CreatedAt: createdAt,
+			UpdatedAt: updatedAt,
+			Category: &domain.Category{
+				ID:   1,
+				Name: "Backend",
+			},
+		},
+		nil,
+	).Once()
+
+	handler := handlers.NewTaskHandler(serviceMock)
+	router := gin.New()
+	router.POST("/api/tasks", middleware.LanguageMiddleware(), handler.CreateTask)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Build interview API",
+		"status":"in_progress",
+		"priority":3,
+		"due_date":"2026-02-20",
+		"category_id":1
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	var got dto.TaskItem
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, uint64(10), got.ID)
+	require.Equal(t, "Build interview API", got.Title)
+	require.Equal(t, "in_progress", got.Status)
+	require.Equal(t, 3, got.Priority)
+	require.NotNil(t, got.DueDate)
+	require.Equal(t, "2026-02-20", *got.DueDate)
+	require.NotNil(t, got.Category)
+	require.Equal(t, uint64(1), got.Category.ID)
+	serviceMock.AssertExpectations(t)
+}
+
+func TestTaskHandler_CreateTask_InvalidPayload(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.POST("/api/tasks", middleware.LanguageMiddleware(), handler.CreateTask)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusBadRequest, got.ErrDetails.Code)
+	require.Equal(t, "Invalid task payload", got.ErrDetails.Message)
+}
+
+func TestTaskHandler_CreateTask_InvalidDueDate(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.POST("/api/tasks", middleware.LanguageMiddleware(), handler.CreateTask)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Build interview API",
+		"due_date":"2026-40-99"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusBadRequest, got.ErrDetails.Code)
+	require.Equal(t, "Invalid task payload", got.ErrDetails.Message)
+}
+
+func TestTaskHandler_CreateTask_InvalidStatus(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.POST("/api/tasks", middleware.LanguageMiddleware(), handler.CreateTask)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Build interview API",
+		"status":"blocked"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusBadRequest, got.ErrDetails.Code)
+	require.Equal(t, "Invalid task payload", got.ErrDetails.Message)
+}
+
+func TestTaskHandler_CreateTask_InvalidPriority(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.POST("/api/tasks", middleware.LanguageMiddleware(), handler.CreateTask)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Build interview API",
+		"priority":-1
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusBadRequest, got.ErrDetails.Code)
+	require.Equal(t, "Invalid task payload", got.ErrDetails.Message)
+}
+
+func TestTaskHandler_CreateTask_NotFound(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("CreateTask", mock.Anything, mock.Anything).Return(domain.Task{}, domain.ErrTaskNotFound).Once()
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.POST("/api/tasks", middleware.LanguageMiddleware(), handler.CreateTask)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Subtask",
+		"parent_task_id":999
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusNotFound, got.ErrDetails.Code)
+	require.Equal(t, "Task not found", got.ErrDetails.Message)
+	serviceMock.AssertExpectations(t)
+}
+
+func TestTaskHandler_CreateTask_Error(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("CreateTask", mock.Anything, mock.Anything).Return(domain.Task{}, errors.New("db is down")).Once()
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.POST("/api/tasks", middleware.LanguageMiddleware(), handler.CreateTask)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Build interview API"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusInternalServerError, got.ErrDetails.Code)
+	require.Equal(t, "Failed to create task", got.ErrDetails.Message)
 	serviceMock.AssertExpectations(t)
 }

@@ -1,4 +1,6 @@
 errorListTask = "failed to list root tasks"
 invalidTaskID = "Invalid id"
+invalidTaskPayload = "Invalid task payload"
 taskNotFound = "Task not found"
 failListSubtasks = "Error fetching the subtasks"
+failCreateTask = "Failed to create task"

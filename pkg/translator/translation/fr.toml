@@ -1,4 +1,6 @@
 errorListTask = "echec de recuperation des taches racines"
 invalidTaskID = "Id invalide"
+invalidTaskPayload = "Payload de tache invalide"
 taskNotFound = "Tâche non trouvée"
 failListSubtasks = "Erreur lors de la recuperation des sous-tâches"
+failCreateTask = "Erreur lors de la creation de la tâche"

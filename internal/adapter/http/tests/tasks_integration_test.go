@@ -1,9 +1,11 @@
 package tests
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	dbadapter "ringover/internal/adapter/db"
@@ -151,4 +153,106 @@ func (s *TasksIntegrationSuite) TestGetTaskSubtasks_ReturnsBadRequestWhenIDIsInv
 	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
 	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
 	s.Require().Equal("Invalid id", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestPostTasks_CreatesRootTask() {
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Créer endpoint POST /tasks",
+		"status":"todo",
+		"priority":2,
+		"due_date":"2026-02-20",
+		"category_id":1
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusCreated, rec.Code)
+
+	var got dto.TaskItem
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().NotZero(got.ID)
+	s.Require().Equal("Créer endpoint POST /tasks", got.Title)
+	s.Require().Equal("todo", got.Status)
+	s.Require().Equal(2, got.Priority)
+	s.Require().NotNil(got.Category)
+	s.Require().Equal(uint64(1), got.Category.ID)
+
+	var parentID sql.NullInt64
+	err := s.DB.Get(&parentID, "SELECT parent_task_id FROM tasks WHERE id = ?", got.ID)
+	s.Require().NoError(err)
+	s.Require().False(parentID.Valid)
+}
+
+func (s *TasksIntegrationSuite) TestPostTasks_CreatesSubTask() {
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Ajouter tests endpoint",
+		"parent_task_id":1,
+		"category_id":1
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusCreated, rec.Code)
+
+	var got dto.TaskItem
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().NotZero(got.ID)
+	s.Require().Equal("Ajouter tests endpoint", got.Title)
+	s.Require().Equal("todo", got.Status)
+
+	var parentID sql.NullInt64
+	err := s.DB.Get(&parentID, "SELECT parent_task_id FROM tasks WHERE id = ?", got.ID)
+	s.Require().NoError(err)
+	s.Require().True(parentID.Valid)
+	s.Require().Equal(int64(1), parentID.Int64)
+}
+
+func (s *TasksIntegrationSuite) TestPostTasks_ReturnsNotFoundWhenParentTaskDoesNotExist() {
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Subtask",
+		"parent_task_id":999999
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusNotFound, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusNotFound, got.ErrDetails.Code)
+	s.Require().Equal("Task not found", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestPostTasks_ReturnsBadRequestWhenPayloadIsInvalid() {
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
+	s.Require().Equal("Invalid task payload", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestPostTasks_ReturnsBadRequestWhenStatusIsInvalid() {
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Task",
+		"status":"blocked"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
+	s.Require().Equal("Invalid task payload", got.ErrDetails.Message)
 }

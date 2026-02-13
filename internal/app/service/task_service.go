@@ -15,6 +15,8 @@ func NewTaskService(taskRepository ports.TaskRepository) *TaskService {
 	return &TaskService{taskRepository: taskRepository}
 }
 
+var _ ports.TaskService = (*TaskService)(nil)
+
 func (s *TaskService) ListRootTasks(ctx context.Context) ([]domain.Task, error) {
 	return s.taskRepository.ListRootTasks(ctx)
 }
@@ -23,4 +25,6 @@ func (s *TaskService) ListRootSubtasks(ctx context.Context, taskID uint64) ([]do
 	return s.taskRepository.ListRootSubTasks(ctx, taskID)
 }
 
-var _ ports.TaskService = (*TaskService)(nil)
+func (s *TaskService) CreateTask(ctx context.Context, input domain.CreateTaskInput) (domain.Task, error) {
+	return s.taskRepository.CreateTask(ctx, input)
+}

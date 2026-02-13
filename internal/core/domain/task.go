@@ -23,3 +23,13 @@ type Task struct {
 	Category    *Category
 	Subtasks    []Task
 }
+
+type CreateTaskInput struct {
+	Title        string
+	Description  *string
+	Status       TaskStatus
+	Priority     int
+	DueDate      *time.Time
+	ParentTaskID *uint64
+	CategoryID   *uint64
+}
