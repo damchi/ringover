@@ -1,4 +1,5 @@
 MIGRATE ?= migrate
+NO_BUILD ?= 0
 
 ENV_FILE := .env
 
@@ -13,8 +14,10 @@ REQUIRED_VARS := MYSQL_USER MYSQL_PASSWORD MYSQL_ROOT_PASSWORD MYSQL_HOST MYSQL_
 $(foreach v,$(REQUIRED_VARS),$(if $($(v)),,$(error Missing $(v) in $(ENV_FILE))))
 
 MYSQL_DSN := mysql://$(MYSQL_USER):$(MYSQL_PASSWORD)@tcp($(MYSQL_HOST):$(MYSQL_PORT))/$(MYSQL_DATABASE)
-ifneq ($(strip $(MYSQL_PARAMS)),)
-MYSQL_DSN := $(MYSQL_DSN)?$(MYSQL_PARAMS)
+# Keep MYSQL_PARAMS unquoted in .env (e.g. MYSQL_PARAMS=parseTime=true)
+MYSQL_PARAMS_CLEAN := $(strip $(MYSQL_PARAMS))
+ifneq ($(MYSQL_PARAMS_CLEAN),)
+MYSQL_DSN := $(MYSQL_DSN)?$(MYSQL_PARAMS_CLEAN)
 endif
 
 .PHONY: check-requirements start logs stop kill migrate-new migrate-up migrate-down test-unit test-integration test-all
@@ -40,7 +43,11 @@ start: check-requirements
 		exit 1; \
 	fi
 	@$(MAKE) migrate-up
-	@docker compose up -d api
+	@if [ "$(NO_BUILD)" = "1" ]; then \
+		docker compose up -d api; \
+	else \
+		docker compose up -d --build api; \
+	fi
 	@echo "Everything started successfully: docker compose is up and migrations are applied."
 	@echo "Following API logs (Ctrl+C to stop logs, containers stay running)..."
 	@$(MAKE) --no-print-directory logs

@@ -277,6 +277,65 @@ func (s *TasksIntegrationSuite) TestPostTasks_ReturnsBadRequestWhenStatusIsInval
 	s.Require().Equal("Invalid task payload", got.ErrDetails.Message)
 }
 
+func (s *TasksIntegrationSuite) TestPostTasks_ReturnsBadRequestWhenStatusIsNull() {
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Task",
+		"status":null
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
+	s.Require().Equal("Invalid task payload", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestPostTasks_ReturnsBadRequestWhenPriorityIsNull() {
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Task",
+		"priority":null
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
+	s.Require().Equal("Invalid task payload", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestPostTasks_IgnoresUnknownFields() {
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Task",
+		"foo":"bar"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusCreated, rec.Code)
+
+	var got dto.TaskItem
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().NotZero(got.ID)
+	s.Require().Equal("Task", got.Title)
+	s.Require().Equal("todo", got.Status)
+
+	var row struct {
+		Title string `db:"title"`
+	}
+	err := s.DB.Get(&row, "SELECT title FROM tasks WHERE id = ?", got.ID)
+	s.Require().NoError(err)
+	s.Require().Equal("Task", row.Title)
+}
+
 func (s *TasksIntegrationSuite) TestPatchTasks_UpdatesTask() {
 	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{
 		"title":"Task updated from patch",
@@ -334,6 +393,27 @@ func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsBadRequestWhenPayloadIsInv
 	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
 	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
 	s.Require().Equal("Invalid task payload", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestPatchTasks_IgnoresUnknownFields() {
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{"title":"x","foo":"bar"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusOK, rec.Code)
+
+	var got dto.TaskItem
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(uint64(1), got.ID)
+	s.Require().Equal("x", got.Title)
+
+	var row struct {
+		Title string `db:"title"`
+	}
+	err := s.DB.Get(&row, "SELECT title FROM tasks WHERE id = 1")
+	s.Require().NoError(err)
+	s.Require().Equal("x", row.Title)
 }
 
 func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsBadRequestWhenStatusIsNull() {

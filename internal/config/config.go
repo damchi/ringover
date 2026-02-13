@@ -28,7 +28,7 @@ func LoadConfig() *Config {
 		DbUser:         getEnv("MYSQL_USER", "ringover"),
 		DbPassword:     getEnv("MYSQL_PASSWORD", "ringover"),
 		DbName:         getEnv("MYSQL_DATABASE", "ringover"),
-		DbParams:       getEnv("MYSQL_PARAMS", "parseTime=true&multiStatements=true"),
+		DbParams:       getEnv("MYSQL_PARAMS", "parseTime=true"),
 		TrustedProxies: parseTrustedProxies(os.Getenv("TRUSTED_PROXIES")),
 	}
 }

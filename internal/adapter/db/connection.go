@@ -14,7 +14,7 @@ import (
 func ConnectDB(conf *config.Config) (*sqlx.DB, error) {
 	params := conf.DbParams
 	if params == "" {
-		params = "parseTime=true&multiStatements=true"
+		params = "parseTime=true"
 	}
 
 	dsnConfig := mysqlDriver.NewConfig()
