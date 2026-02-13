@@ -392,6 +392,40 @@ func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsBadRequestWhenParentTaskWo
 	s.Require().Equal("Invalid task hierarchy", got.ErrDetails.Message)
 }
 
+func (s *TasksIntegrationSuite) TestPatchTasks_ClearsNullableFieldsWhenNullIsProvided() {
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/4", strings.NewReader(`{
+		"description":null,
+		"due_date":null,
+		"parent_task_id":null,
+		"category_id":null
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusOK, rec.Code)
+
+	var got dto.TaskItem
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(uint64(4), got.ID)
+	s.Require().Nil(got.Description)
+	s.Require().Nil(got.DueDate)
+	s.Require().Nil(got.Category)
+
+	var row struct {
+		Description  sql.NullString `db:"description"`
+		DueDate      sql.NullTime   `db:"due_date"`
+		ParentTaskID sql.NullInt64  `db:"parent_task_id"`
+		CategoryID   sql.NullInt64  `db:"category_id"`
+	}
+	err := s.DB.Get(&row, "SELECT description, due_date, parent_task_id, category_id FROM tasks WHERE id = 4")
+	s.Require().NoError(err)
+	s.Require().False(row.Description.Valid)
+	s.Require().False(row.DueDate.Valid)
+	s.Require().False(row.ParentTaskID.Valid)
+	s.Require().False(row.CategoryID.Valid)
+}
+
 func (s *TasksIntegrationSuite) TestDeleteTasks_DeletesTaskAndSubtasks() {
 	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/1", nil)
 	rec := httptest.NewRecorder()

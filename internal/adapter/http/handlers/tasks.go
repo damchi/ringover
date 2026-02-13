@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"ringover/internal/adapter/http/dto"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"go.uber.org/zap"
 )
 
@@ -173,7 +176,7 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	}
 
 	var req dto.UpdateTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := c.ShouldBindBodyWith(&req, binding.JSON); err != nil {
 		c.JSON(
 			http.StatusBadRequest,
 			apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskPayload, lang),
@@ -181,7 +184,16 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 		return
 	}
 
-	if !hasTaskUpdateFields(req) {
+	var raw map[string]json.RawMessage
+	if err := c.ShouldBindBodyWith(&raw, binding.JSON); err != nil {
+		c.JSON(
+			http.StatusBadRequest,
+			apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskPayload, lang),
+		)
+		return
+	}
+
+	if !hasTaskUpdateFields(raw) {
 		c.JSON(
 			http.StatusBadRequest,
 			apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskPayload, lang),
@@ -190,6 +202,13 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	}
 
 	var title *string
+	if hasJSONField(raw, "title") && req.Title == nil {
+		c.JSON(
+			http.StatusBadRequest,
+			apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskPayload, lang),
+		)
+		return
+	}
 	if req.Title != nil {
 		value := strings.TrimSpace(*req.Title)
 		if value == "" {
@@ -203,13 +222,45 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	}
 
 	var status *domain.TaskStatus
+	if hasJSONField(raw, "status") && req.Status == nil {
+		c.JSON(
+			http.StatusBadRequest,
+			apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskPayload, lang),
+		)
+		return
+	}
 	if req.Status != nil {
 		value := domain.TaskStatus(*req.Status)
 		status = &value
 	}
 
+	if hasJSONField(raw, "priority") && req.Priority == nil {
+		c.JSON(
+			http.StatusBadRequest,
+			apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskPayload, lang),
+		)
+		return
+	}
+
+	descriptionSet := hasJSONField(raw, "description")
+	if descriptionSet && !isJSONNull(raw["description"]) && req.Description == nil {
+		c.JSON(
+			http.StatusBadRequest,
+			apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskPayload, lang),
+		)
+		return
+	}
+
 	var dueDate *time.Time
-	if req.DueDate != nil {
+	dueDateSet := hasJSONField(raw, "due_date")
+	if dueDateSet && !isJSONNull(raw["due_date"]) {
+		if req.DueDate == nil {
+			c.JSON(
+				http.StatusBadRequest,
+				apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskPayload, lang),
+			)
+			return
+		}
 		parsedDueDate, err := time.Parse("2006-01-02", *req.DueDate)
 		if err != nil {
 			c.JSON(
@@ -221,18 +272,36 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 		dueDate = &parsedDueDate
 	}
 
+	parentTaskIDSet := hasJSONField(raw, "parent_task_id")
+	if parentTaskIDSet && !isJSONNull(raw["parent_task_id"]) && req.ParentTaskID == nil {
+		c.JSON(
+			http.StatusBadRequest,
+			apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskPayload, lang),
+		)
+		return
+	}
+
+	categoryIDSet := hasJSONField(raw, "category_id")
+	if categoryIDSet && !isJSONNull(raw["category_id"]) && req.CategoryID == nil {
+		c.JSON(
+			http.StatusBadRequest,
+			apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskPayload, lang),
+		)
+		return
+	}
+
 	task, err := h.taskService.UpdateTask(c.Request.Context(), taskID, domain.UpdateTaskInput{
 		Title:           title,
 		Description:     req.Description,
-		DescriptionSet:  req.Description != nil,
+		DescriptionSet:  descriptionSet,
 		Status:          status,
 		Priority:        req.Priority,
 		DueDate:         dueDate,
-		DueDateSet:      req.DueDate != nil,
+		DueDateSet:      dueDateSet,
 		ParentTaskID:    req.ParentTaskID,
-		ParentTaskIDSet: req.ParentTaskID != nil,
+		ParentTaskIDSet: parentTaskIDSet,
 		CategoryID:      req.CategoryID,
-		CategoryIDSet:   req.CategoryID != nil,
+		CategoryIDSet:   categoryIDSet,
 	})
 	if err != nil {
 		if errors.Is(err, domain.ErrTaskNotFound) {
@@ -300,12 +369,21 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func hasTaskUpdateFields(req dto.UpdateTaskRequest) bool {
-	return req.Title != nil ||
-		req.Description != nil ||
-		req.Status != nil ||
-		req.Priority != nil ||
-		req.DueDate != nil ||
-		req.ParentTaskID != nil ||
-		req.CategoryID != nil
+func hasTaskUpdateFields(raw map[string]json.RawMessage) bool {
+	return hasJSONField(raw, "title") ||
+		hasJSONField(raw, "description") ||
+		hasJSONField(raw, "status") ||
+		hasJSONField(raw, "priority") ||
+		hasJSONField(raw, "due_date") ||
+		hasJSONField(raw, "parent_task_id") ||
+		hasJSONField(raw, "category_id")
+}
+
+func hasJSONField(raw map[string]json.RawMessage, field string) bool {
+	_, ok := raw[field]
+	return ok
+}
+
+func isJSONNull(value json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(value), []byte("null"))
 }
