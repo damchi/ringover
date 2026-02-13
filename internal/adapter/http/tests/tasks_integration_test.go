@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package tests
 
 import (
@@ -226,6 +229,23 @@ func (s *TasksIntegrationSuite) TestPostTasks_ReturnsNotFoundWhenParentTaskDoesN
 	s.Require().Equal("Task not found", got.ErrDetails.Message)
 }
 
+func (s *TasksIntegrationSuite) TestPostTasks_ReturnsNotFoundWhenCategoryDoesNotExist() {
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Task",
+		"category_id":999999
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusNotFound, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusNotFound, got.ErrDetails.Code)
+	s.Require().Equal("Category not found", got.ErrDetails.Message)
+}
+
 func (s *TasksIntegrationSuite) TestPostTasks_ReturnsBadRequestWhenPayloadIsInvalid() {
 	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -328,4 +348,102 @@ func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsNotFoundWhenTaskDoesNotExi
 	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
 	s.Require().Equal(http.StatusNotFound, got.ErrDetails.Code)
 	s.Require().Equal("Task not found", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsNotFoundWhenCategoryDoesNotExist() {
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{"category_id":999999}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusNotFound, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusNotFound, got.ErrDetails.Code)
+	s.Require().Equal("Category not found", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsBadRequestWhenParentTaskIsSelf() {
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{"parent_task_id":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
+	s.Require().Equal("Invalid task hierarchy", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsBadRequestWhenParentTaskWouldCreateCycle() {
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{"parent_task_id":4}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
+	s.Require().Equal("Invalid task hierarchy", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestDeleteTasks_DeletesTaskAndSubtasks() {
+	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/1", nil)
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusNoContent, rec.Code)
+	s.Require().Empty(rec.Body.String())
+
+	var deletedCount int
+	err := s.DB.Get(&deletedCount, "SELECT COUNT(*) FROM tasks WHERE id IN (1,4,5)")
+	s.Require().NoError(err)
+	s.Require().Equal(0, deletedCount)
+}
+
+func (s *TasksIntegrationSuite) TestDeleteTasks_ReturnsBadRequestWhenIDIsInvalid() {
+	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/abc", nil)
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
+	s.Require().Equal("Invalid id", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestDeleteTasks_ReturnsNotFoundWhenTaskDoesNotExist() {
+	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/999999", nil)
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusNotFound, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusNotFound, got.ErrDetails.Code)
+	s.Require().Equal("Task not found", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestDeleteTasks_ReturnsInternalServerErrorWhenDeleteFails() {
+	_, err := s.DB.Exec("DROP TABLE tasks")
+	s.Require().NoError(err)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/1", nil)
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusInternalServerError, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusInternalServerError, got.ErrDetails.Code)
+	s.Require().Equal("Failed to delete task", got.ErrDetails.Message)
 }

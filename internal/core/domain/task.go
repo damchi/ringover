@@ -35,11 +35,15 @@ type CreateTaskInput struct {
 }
 
 type UpdateTaskInput struct {
-	Title        *string
-	Description  *string
-	Status       *TaskStatus
-	Priority     *int
-	DueDate      *time.Time
-	ParentTaskID *uint64
-	CategoryID   *uint64
+	Title           *string
+	Description     *string
+	DescriptionSet  bool
+	Status          *TaskStatus
+	Priority        *int
+	DueDate         *time.Time
+	DueDateSet      bool
+	ParentTaskID    *uint64
+	ParentTaskIDSet bool
+	CategoryID      *uint64
+	CategoryIDSet   bool
 }

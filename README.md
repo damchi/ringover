@@ -24,12 +24,14 @@ MYSQL_DATABASE=ringover
 MYSQL_USER=ringover
 MYSQL_PASSWORD=ringover
 MYSQL_ROOT_PASSWORD=root
+TRUSTED_PROXIES=
 ```
 
 Notes:
 
 - `MYSQL_ROOT_PASSWORD` is required for first MySQL initialization on a fresh volume.
 - In Docker Compose, API DB host is forced to `db` internally.
+- Leave `TRUSTED_PROXIES` empty to ignore `X-Forwarded-*` headers; set CIDR/IP list when behind a trusted reverse proxy.
 - `.env` is required by the `Makefile`.
 
 ## Run
@@ -95,6 +97,7 @@ make test-all
 - `GET /api/tasks`
 - `POST /api/tasks`
 - `PATCH /api/tasks/:id`
+- `DELETE /api/tasks/:id`
 - `GET /api/tasks/:id/subtasks`
 
 Examples:
@@ -107,6 +110,7 @@ curl -X POST http://127.0.0.1:8080/api/tasks \
 curl -X PATCH http://127.0.0.1:8080/api/tasks/1 \
   -H "Content-Type: application/json" \
   -d '{"title":"Task updated from patch","status":"done","priority":1}'
+curl -X DELETE http://127.0.0.1:8080/api/tasks/1
 curl http://127.0.0.1:8080/api/tasks/1/subtasks
 ```
 

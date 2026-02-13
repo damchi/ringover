@@ -32,3 +32,7 @@ func (s *TaskService) CreateTask(ctx context.Context, input domain.CreateTaskInp
 func (s *TaskService) UpdateTask(ctx context.Context, taskID uint64, input domain.UpdateTaskInput) (domain.Task, error) {
 	return s.taskRepository.UpdateTask(ctx, taskID, input)
 }
+
+func (s *TaskService) DeleteTask(ctx context.Context, taskID uint64) error {
+	return s.taskRepository.DeleteTask(ctx, taskID)
+}

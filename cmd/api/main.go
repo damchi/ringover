@@ -44,6 +44,9 @@ func main() {
 	}()
 
 	r := gin.New()
+	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		logger.Fatal("failed to configure trusted proxies", zap.Error(err))
+	}
 	r.Use(gin.Recovery(), httpmiddleware.GinZapMiddleware(logger))
 	healthHandler := handlers.NewHealthHandler(db)
 

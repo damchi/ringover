@@ -101,7 +101,7 @@ paths:
                   code: 400
                   message: Invalid task payload
         "404":
-          description: Parent task not found
+          description: Parent task or category not found
           content:
             application/json:
               schema:
@@ -109,7 +109,7 @@ paths:
               example:
                 error:
                   code: 404
-                  message: Task not found
+                  message: Category not found
         "500":
           description: Internal server error
           content:
@@ -223,7 +223,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskItem"
         "400":
-          description: Invalid payload or invalid task id
+          description: Invalid payload, invalid hierarchy, or invalid task id
           content:
             application/json:
               schema:
@@ -231,7 +231,62 @@ paths:
               example:
                 error:
                   code: 400
-                  message: Invalid task payload
+                  message: Invalid task hierarchy
+        "404":
+          description: Task or category not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 404
+                  message: Category not found
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 500
+                  message: Failed to update task
+    delete:
+      tags:
+        - Tasks
+      summary: Delete a task and its subtasks
+      description: Deletes a task by id. Subtasks are deleted by DB cascade.
+      operationId: deleteTask
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+          description: Task id.
+        - in: header
+          name: Accept-Language
+          required: false
+          schema:
+            type: string
+            example: en
+          description: Language used to translate error messages.
+      responses:
+        "204":
+          description: Task deleted
+        "400":
+          description: Invalid task id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 400
+                  message: Invalid id
         "404":
           description: Task not found
           content:
@@ -251,7 +306,7 @@ paths:
               example:
                 error:
                   code: 500
-                  message: Failed to update task
+                  message: Failed to delete task
   /api/health:
     get:
       tags:
@@ -405,6 +460,11 @@ components:
           type: string
           nullable: true
           example: "2025-08-20"
+        completed_at:
+          type: string
+          format: date
+          nullable: true
+          example: "2025-08-22"
         created_at:
           type: string
           format: date-time

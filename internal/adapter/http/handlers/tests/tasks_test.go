@@ -66,6 +66,11 @@ func (m *taskServiceMock) UpdateTask(ctx context.Context, taskID uint64, input d
 	return task, args.Error(1)
 }
 
+func (m *taskServiceMock) DeleteTask(ctx context.Context, taskID uint64) error {
+	args := m.Called(ctx, taskID)
+	return args.Error(0)
+}
+
 func TestTaskHandler_ListRootTasks_Success(t *testing.T) {
 	description := "ship endpoint"
 	dueDate := time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC)
@@ -469,6 +474,33 @@ func TestTaskHandler_CreateTask_NotFound(t *testing.T) {
 	serviceMock.AssertExpectations(t)
 }
 
+func TestTaskHandler_CreateTask_CategoryNotFound(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("CreateTask", mock.Anything, mock.Anything).Return(domain.Task{}, domain.ErrCategoryNotFound).Once()
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.POST("/api/tasks", middleware.LanguageMiddleware(), handler.CreateTask)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{
+		"title":"Task",
+		"category_id":999
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusNotFound, got.ErrDetails.Code)
+	require.Equal(t, "Category not found", got.ErrDetails.Message)
+	serviceMock.AssertExpectations(t)
+}
+
 func TestTaskHandler_CreateTask_Error(t *testing.T) {
 	serviceMock := new(taskServiceMock)
 	serviceMock.On("CreateTask", mock.Anything, mock.Anything).Return(domain.Task{}, errors.New("db is down")).Once()
@@ -614,6 +646,54 @@ func TestTaskHandler_UpdateTask_NotFound(t *testing.T) {
 	serviceMock.AssertExpectations(t)
 }
 
+func TestTaskHandler_UpdateTask_CategoryNotFound(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("UpdateTask", mock.Anything, uint64(1), mock.Anything).Return(domain.Task{}, domain.ErrCategoryNotFound).Once()
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.PATCH("/api/tasks/:id", middleware.LanguageMiddleware(), handler.UpdateTask)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{"category_id":999}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusNotFound, got.ErrDetails.Code)
+	require.Equal(t, "Category not found", got.ErrDetails.Message)
+	serviceMock.AssertExpectations(t)
+}
+
+func TestTaskHandler_UpdateTask_InvalidTaskHierarchy(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("UpdateTask", mock.Anything, uint64(1), mock.Anything).Return(domain.Task{}, domain.ErrTaskHierarchyCycle).Once()
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.PATCH("/api/tasks/:id", middleware.LanguageMiddleware(), handler.UpdateTask)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{"parent_task_id":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusBadRequest, got.ErrDetails.Code)
+	require.Equal(t, "Invalid task hierarchy", got.ErrDetails.Message)
+	serviceMock.AssertExpectations(t)
+}
+
 func TestTaskHandler_UpdateTask_Error(t *testing.T) {
 	serviceMock := new(taskServiceMock)
 	serviceMock.On("UpdateTask", mock.Anything, uint64(1), mock.Anything).Return(domain.Task{}, errors.New("db is down")).Once()
@@ -635,5 +715,91 @@ func TestTaskHandler_UpdateTask_Error(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, http.StatusInternalServerError, got.ErrDetails.Code)
 	require.Equal(t, "Failed to update task", got.ErrDetails.Message)
+	serviceMock.AssertExpectations(t)
+}
+
+func TestTaskHandler_DeleteTask_Success(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("DeleteTask", mock.Anything, uint64(1)).Return(nil).Once()
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.DELETE("/api/tasks/:id", middleware.LanguageMiddleware(), handler.DeleteTask)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/1", nil)
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.Empty(t, rec.Body.String())
+	serviceMock.AssertExpectations(t)
+}
+
+func TestTaskHandler_DeleteTask_InvalidTaskID(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.DELETE("/api/tasks/:id", middleware.LanguageMiddleware(), handler.DeleteTask)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/abc", nil)
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusBadRequest, got.ErrDetails.Code)
+	require.Equal(t, "Invalid id", got.ErrDetails.Message)
+}
+
+func TestTaskHandler_DeleteTask_NotFound(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("DeleteTask", mock.Anything, uint64(999)).Return(domain.ErrTaskNotFound).Once()
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.DELETE("/api/tasks/:id", middleware.LanguageMiddleware(), handler.DeleteTask)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/999", nil)
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusNotFound, got.ErrDetails.Code)
+	require.Equal(t, "Task not found", got.ErrDetails.Message)
+	serviceMock.AssertExpectations(t)
+}
+
+func TestTaskHandler_DeleteTask_Error(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("DeleteTask", mock.Anything, uint64(1)).Return(errors.New("db is down")).Once()
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.DELETE("/api/tasks/:id", middleware.LanguageMiddleware(), handler.DeleteTask)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/1", nil)
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusInternalServerError, got.ErrDetails.Code)
+	require.Equal(t, "Failed to delete task", got.ErrDetails.Message)
 	serviceMock.AssertExpectations(t)
 }

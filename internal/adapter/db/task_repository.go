@@ -41,6 +41,20 @@ WHERE id = ?
 LIMIT 1;
 `
 
+const categoryExistsQuery = `
+SELECT id
+FROM categories
+WHERE id = ?
+LIMIT 1;
+`
+
+const taskParentIDQuery = `
+SELECT parent_task_id
+FROM tasks
+WHERE id = ?
+LIMIT 1;
+`
+
 const createTaskQuery = `
 INSERT INTO tasks (
   title,
@@ -64,10 +78,15 @@ WHERE t.id = ?
 LIMIT 1;
 `
 
+const deleteTaskByIDQuery = `
+DELETE FROM tasks
+WHERE id = ?;
+`
+
 const (
-	mysqlSQLStateIntegrityConstraintViolation = "23000"
-	mysqlChildRowFKMessage                    = "cannot add or update a child row"
-	parentTaskFKConstraintName                = "fk_task_parent"
+	mysqlErrorNoReferencedRow = uint16(1452)
+	parentTaskFKConstraint    = "fk_task_parent"
+	categoryFKConstraint      = "fk_task_category"
 )
 
 type TaskRepository struct {
@@ -131,6 +150,15 @@ func (r *TaskRepository) CreateTask(ctx context.Context, input domain.CreateTask
 			return domain.Task{}, domain.ErrTaskNotFound
 		}
 	}
+	if input.CategoryID != nil {
+		exists, err := r.categoryExists(ctx, *input.CategoryID)
+		if err != nil {
+			return domain.Task{}, err
+		}
+		if !exists {
+			return domain.Task{}, domain.ErrCategoryNotFound
+		}
+	}
 
 	result, err := r.db.ExecContext(
 		ctx,
@@ -145,8 +173,12 @@ func (r *TaskRepository) CreateTask(ctx context.Context, input domain.CreateTask
 	)
 	if err != nil {
 		// Handle race condition where parent was deleted between existence check and insert.
-		if isParentForeignKeyError(err) {
+		if isForeignKeyConstraintError(err, parentTaskFKConstraint) {
 			return domain.Task{}, domain.ErrTaskNotFound
+		}
+		// Handle race condition where category was deleted between existence check and insert.
+		if isForeignKeyConstraintError(err, categoryFKConstraint) {
+			return domain.Task{}, domain.ErrCategoryNotFound
 		}
 		return domain.Task{}, err
 	}
@@ -168,13 +200,35 @@ func (r *TaskRepository) UpdateTask(ctx context.Context, taskID uint64, input do
 		return domain.Task{}, domain.ErrTaskNotFound
 	}
 
-	if input.ParentTaskID != nil {
+	if input.ParentTaskIDSet && input.ParentTaskID != nil {
+		if *input.ParentTaskID == taskID {
+			return domain.Task{}, domain.ErrTaskHierarchyCycle
+		}
+
 		exists, err := r.taskExists(ctx, *input.ParentTaskID)
 		if err != nil {
 			return domain.Task{}, err
 		}
 		if !exists {
 			return domain.Task{}, domain.ErrTaskNotFound
+		}
+
+		wouldCreateCycle, err := r.wouldCreateTaskHierarchyCycle(ctx, taskID, *input.ParentTaskID)
+		if err != nil {
+			return domain.Task{}, err
+		}
+		if wouldCreateCycle {
+			return domain.Task{}, domain.ErrTaskHierarchyCycle
+		}
+	}
+
+	if input.CategoryIDSet && input.CategoryID != nil {
+		exists, err := r.categoryExists(ctx, *input.CategoryID)
+		if err != nil {
+			return domain.Task{}, err
+		}
+		if !exists {
+			return domain.Task{}, domain.ErrCategoryNotFound
 		}
 	}
 
@@ -185,9 +239,13 @@ func (r *TaskRepository) UpdateTask(ctx context.Context, taskID uint64, input do
 		setClauses = append(setClauses, "title = ?")
 		args = append(args, *input.Title)
 	}
-	if input.Description != nil {
+	if input.DescriptionSet {
 		setClauses = append(setClauses, "description = ?")
-		args = append(args, *input.Description)
+		if input.Description == nil {
+			args = append(args, nil)
+		} else {
+			args = append(args, *input.Description)
+		}
 	}
 	if input.Status != nil {
 		setClauses = append(setClauses, "status = ?")
@@ -197,17 +255,29 @@ func (r *TaskRepository) UpdateTask(ctx context.Context, taskID uint64, input do
 		setClauses = append(setClauses, "priority = ?")
 		args = append(args, *input.Priority)
 	}
-	if input.DueDate != nil {
+	if input.DueDateSet {
 		setClauses = append(setClauses, "due_date = ?")
-		args = append(args, *input.DueDate)
+		if input.DueDate == nil {
+			args = append(args, nil)
+		} else {
+			args = append(args, *input.DueDate)
+		}
 	}
-	if input.ParentTaskID != nil {
+	if input.ParentTaskIDSet {
 		setClauses = append(setClauses, "parent_task_id = ?")
-		args = append(args, *input.ParentTaskID)
+		if input.ParentTaskID == nil {
+			args = append(args, nil)
+		} else {
+			args = append(args, *input.ParentTaskID)
+		}
 	}
-	if input.CategoryID != nil {
+	if input.CategoryIDSet {
 		setClauses = append(setClauses, "category_id = ?")
-		args = append(args, *input.CategoryID)
+		if input.CategoryID == nil {
+			args = append(args, nil)
+		} else {
+			args = append(args, *input.CategoryID)
+		}
 	}
 
 	if len(setClauses) == 0 {
@@ -219,13 +289,34 @@ func (r *TaskRepository) UpdateTask(ctx context.Context, taskID uint64, input do
 
 	if _, err := r.db.ExecContext(ctx, updateQuery, args...); err != nil {
 		// Handle race condition where parent was deleted between existence check and update.
-		if isParentForeignKeyError(err) {
+		if isForeignKeyConstraintError(err, parentTaskFKConstraint) {
 			return domain.Task{}, domain.ErrTaskNotFound
+		}
+		// Handle race condition where category was deleted between existence check and update.
+		if isForeignKeyConstraintError(err, categoryFKConstraint) {
+			return domain.Task{}, domain.ErrCategoryNotFound
 		}
 		return domain.Task{}, err
 	}
 
 	return r.getTaskByID(ctx, taskID)
+}
+
+func (r *TaskRepository) DeleteTask(ctx context.Context, taskID uint64) error {
+	result, err := r.db.ExecContext(ctx, deleteTaskByIDQuery, taskID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return domain.ErrTaskNotFound
+	}
+
+	return nil
 }
 
 func (r *TaskRepository) taskExists(ctx context.Context, taskID uint64) (bool, error) {
@@ -237,6 +328,56 @@ func (r *TaskRepository) taskExists(ctx context.Context, taskID uint64) (bool, e
 		return false, err
 	}
 	return true, nil
+}
+
+func (r *TaskRepository) categoryExists(ctx context.Context, categoryID uint64) (bool, error) {
+	var id uint64
+	if err := r.db.GetContext(ctx, &id, categoryExistsQuery, categoryID); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (r *TaskRepository) wouldCreateTaskHierarchyCycle(ctx context.Context, taskID uint64, newParentID uint64) (bool, error) {
+	visited := map[uint64]struct{}{
+		taskID: {},
+	}
+
+	current := newParentID
+	for {
+		if _, seen := visited[current]; seen {
+			return true, nil
+		}
+		visited[current] = struct{}{}
+
+		parentID, hasParent, err := r.getParentTaskID(ctx, current)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return false, nil
+			}
+			return false, err
+		}
+		if !hasParent {
+			return false, nil
+		}
+
+		current = parentID
+	}
+}
+
+func (r *TaskRepository) getParentTaskID(ctx context.Context, taskID uint64) (uint64, bool, error) {
+	var parentID sql.NullInt64
+	if err := r.db.GetContext(ctx, &parentID, taskParentIDQuery, taskID); err != nil {
+		return 0, false, err
+	}
+	if !parentID.Valid {
+		return 0, false, nil
+	}
+
+	return uint64(parentID.Int64), true, nil
 }
 
 func (r *TaskRepository) listSubtasksTree(ctx context.Context, parentTaskID uint64) ([]domain.Task, error) {
@@ -271,21 +412,17 @@ func (r *TaskRepository) getTaskByID(ctx context.Context, taskID uint64) (domain
 	return mapTaskRowToDomainTask(row), nil
 }
 
-func isParentForeignKeyError(err error) bool {
+func isForeignKeyConstraintError(err error, constraintName string) bool {
 	var mysqlErr *mysqlDriver.MySQLError
 	if !errors.As(err, &mysqlErr) {
 		return false
 	}
-	if string(mysqlErr.SQLState[:]) != mysqlSQLStateIntegrityConstraintViolation {
+	if mysqlErr.Number != mysqlErrorNoReferencedRow {
 		return false
 	}
 
 	message := strings.ToLower(mysqlErr.Message)
-	if !strings.Contains(message, mysqlChildRowFKMessage) {
-		return false
-	}
-
-	return strings.Contains(message, parentTaskFKConstraintName)
+	return strings.Contains(message, strings.ToLower(constraintName))
 }
 
 func mapTaskRowToDomainTask(row taskRow) domain.Task {

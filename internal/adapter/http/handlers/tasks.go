@@ -134,6 +134,20 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 			)
 			return
 		}
+		if errors.Is(err, domain.ErrCategoryNotFound) {
+			c.JSON(
+				http.StatusNotFound,
+				apierrors.CreateError(http.StatusNotFound, apierrors.MsgCategoryNotFound, lang),
+			)
+			return
+		}
+		if errors.Is(err, domain.ErrTaskHierarchyCycle) {
+			c.JSON(
+				http.StatusBadRequest,
+				apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskHierarchy, lang),
+			)
+			return
+		}
 
 		zap.L().Error("failed to create task", zap.Error(err))
 		c.JSON(
@@ -208,19 +222,37 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	}
 
 	task, err := h.taskService.UpdateTask(c.Request.Context(), taskID, domain.UpdateTaskInput{
-		Title:        title,
-		Description:  req.Description,
-		Status:       status,
-		Priority:     req.Priority,
-		DueDate:      dueDate,
-		ParentTaskID: req.ParentTaskID,
-		CategoryID:   req.CategoryID,
+		Title:           title,
+		Description:     req.Description,
+		DescriptionSet:  req.Description != nil,
+		Status:          status,
+		Priority:        req.Priority,
+		DueDate:         dueDate,
+		DueDateSet:      req.DueDate != nil,
+		ParentTaskID:    req.ParentTaskID,
+		ParentTaskIDSet: req.ParentTaskID != nil,
+		CategoryID:      req.CategoryID,
+		CategoryIDSet:   req.CategoryID != nil,
 	})
 	if err != nil {
 		if errors.Is(err, domain.ErrTaskNotFound) {
 			c.JSON(
 				http.StatusNotFound,
 				apierrors.CreateError(http.StatusNotFound, apierrors.MsgTaskNotFound, lang),
+			)
+			return
+		}
+		if errors.Is(err, domain.ErrCategoryNotFound) {
+			c.JSON(
+				http.StatusNotFound,
+				apierrors.CreateError(http.StatusNotFound, apierrors.MsgCategoryNotFound, lang),
+			)
+			return
+		}
+		if errors.Is(err, domain.ErrTaskHierarchyCycle) {
+			c.JSON(
+				http.StatusBadRequest,
+				apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskHierarchy, lang),
 			)
 			return
 		}
@@ -234,6 +266,38 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, mapper.ToTaskItem(task))
+}
+
+func (h *TaskHandler) DeleteTask(c *gin.Context) {
+	lang := middleware.GetLang(c)
+
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		c.JSON(
+			http.StatusBadRequest,
+			apierrors.CreateError(http.StatusBadRequest, apierrors.MsgInvalidTaskID, lang),
+		)
+		return
+	}
+
+	if err := h.taskService.DeleteTask(c.Request.Context(), taskID); err != nil {
+		if errors.Is(err, domain.ErrTaskNotFound) {
+			c.JSON(
+				http.StatusNotFound,
+				apierrors.CreateError(http.StatusNotFound, apierrors.MsgTaskNotFound, lang),
+			)
+			return
+		}
+
+		zap.L().Error("failed to delete task", zap.Uint64("task_id", taskID), zap.Error(err))
+		c.JSON(
+			http.StatusInternalServerError,
+			apierrors.CreateError(http.StatusInternalServerError, apierrors.MsgFailDeleteTask, lang),
+		)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 func hasTaskUpdateFields(req dto.UpdateTaskRequest) bool {
