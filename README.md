@@ -90,24 +90,23 @@ make test-all
 - `GET /api/health`
 - `GET /api/health/report`
 
-## Task Endpoint
+## Task Endpoints
 
 - `GET /api/tasks`
 - `POST /api/tasks`
+- `PATCH /api/tasks/:id`
 - `GET /api/tasks/:id/subtasks`
 
-Returns root tasks only (`parent_task_id IS NULL`) with their category.
-`Accept-Language` can be provided to localize error messages.
-
-Example:
+Examples:
 
 ```bash
-curl http://127.0.0.1:8080/api/health
-curl -H "Accept-Language: fr" http://127.0.0.1:8080/api/health/report
 curl http://127.0.0.1:8080/api/tasks
 curl -X POST http://127.0.0.1:8080/api/tasks \
   -H "Content-Type: application/json" \
   -d '{"title":"Créer endpoint POST /tasks","status":"todo","priority":2,"category_id":1}'
+curl -X PATCH http://127.0.0.1:8080/api/tasks/1 \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Task updated from patch","status":"done","priority":1}'
 curl http://127.0.0.1:8080/api/tasks/1/subtasks
 ```
 

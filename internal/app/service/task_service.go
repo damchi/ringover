@@ -28,3 +28,7 @@ func (s *TaskService) ListRootSubtasks(ctx context.Context, taskID uint64) ([]do
 func (s *TaskService) CreateTask(ctx context.Context, input domain.CreateTaskInput) (domain.Task, error) {
 	return s.taskRepository.CreateTask(ctx, input)
 }
+
+func (s *TaskService) UpdateTask(ctx context.Context, taskID uint64, input domain.UpdateTaskInput) (domain.Task, error) {
+	return s.taskRepository.UpdateTask(ctx, taskID, input)
+}

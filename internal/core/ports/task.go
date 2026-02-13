@@ -10,10 +10,12 @@ type TaskRepository interface {
 	ListRootTasks(ctx context.Context) ([]domain.Task, error)
 	ListRootSubTasks(ctx context.Context, taskID uint64) ([]domain.Task, error)
 	CreateTask(ctx context.Context, input domain.CreateTaskInput) (domain.Task, error)
+	UpdateTask(ctx context.Context, taskID uint64, input domain.UpdateTaskInput) (domain.Task, error)
 }
 
 type TaskService interface {
 	ListRootTasks(ctx context.Context) ([]domain.Task, error)
 	ListRootSubtasks(ctx context.Context, taskID uint64) ([]domain.Task, error)
 	CreateTask(ctx context.Context, input domain.CreateTaskInput) (domain.Task, error)
+	UpdateTask(ctx context.Context, taskID uint64, input domain.UpdateTaskInput) (domain.Task, error)
 }

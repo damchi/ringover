@@ -33,3 +33,13 @@ type CreateTaskInput struct {
 	ParentTaskID *uint64
 	CategoryID   *uint64
 }
+
+type UpdateTaskInput struct {
+	Title        *string
+	Description  *string
+	Status       *TaskStatus
+	Priority     *int
+	DueDate      *time.Time
+	ParentTaskID *uint64
+	CategoryID   *uint64
+}

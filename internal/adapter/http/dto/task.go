@@ -14,12 +14,21 @@ type TaskItem struct {
 	Subtasks    []TaskItem `json:"subtasks,omitempty"`
 }
 
-type CreateTaskRequest struct {
-	Title        string  `json:"title" binding:"required,max=255"`
+type TaskPayloadFields struct {
 	Description  *string `json:"description" binding:"omitempty,max=65535"`
 	Status       *string `json:"status" binding:"omitempty,oneof=todo in_progress done"`
 	Priority     *int    `json:"priority" binding:"omitempty,gte=0,lte=127"`
 	DueDate      *string `json:"due_date" binding:"omitempty,datetime=2006-01-02"`
 	ParentTaskID *uint64 `json:"parent_task_id" binding:"omitempty,gt=0"`
 	CategoryID   *uint64 `json:"category_id" binding:"omitempty,gt=0"`
+}
+
+type CreateTaskRequest struct {
+	Title string `json:"title" binding:"required,max=255"`
+	TaskPayloadFields
+}
+
+type UpdateTaskRequest struct {
+	Title *string `json:"title" binding:"omitempty,max=255"`
+	TaskPayloadFields
 }

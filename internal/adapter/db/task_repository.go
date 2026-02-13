@@ -159,6 +159,75 @@ func (r *TaskRepository) CreateTask(ctx context.Context, input domain.CreateTask
 	return r.getTaskByID(ctx, uint64(insertedID))
 }
 
+func (r *TaskRepository) UpdateTask(ctx context.Context, taskID uint64, input domain.UpdateTaskInput) (domain.Task, error) {
+	exists, err := r.taskExists(ctx, taskID)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	if !exists {
+		return domain.Task{}, domain.ErrTaskNotFound
+	}
+
+	if input.ParentTaskID != nil {
+		exists, err := r.taskExists(ctx, *input.ParentTaskID)
+		if err != nil {
+			return domain.Task{}, err
+		}
+		if !exists {
+			return domain.Task{}, domain.ErrTaskNotFound
+		}
+	}
+
+	setClauses := make([]string, 0, 7)
+	args := make([]any, 0, 8)
+
+	if input.Title != nil {
+		setClauses = append(setClauses, "title = ?")
+		args = append(args, *input.Title)
+	}
+	if input.Description != nil {
+		setClauses = append(setClauses, "description = ?")
+		args = append(args, *input.Description)
+	}
+	if input.Status != nil {
+		setClauses = append(setClauses, "status = ?")
+		args = append(args, string(*input.Status))
+	}
+	if input.Priority != nil {
+		setClauses = append(setClauses, "priority = ?")
+		args = append(args, *input.Priority)
+	}
+	if input.DueDate != nil {
+		setClauses = append(setClauses, "due_date = ?")
+		args = append(args, *input.DueDate)
+	}
+	if input.ParentTaskID != nil {
+		setClauses = append(setClauses, "parent_task_id = ?")
+		args = append(args, *input.ParentTaskID)
+	}
+	if input.CategoryID != nil {
+		setClauses = append(setClauses, "category_id = ?")
+		args = append(args, *input.CategoryID)
+	}
+
+	if len(setClauses) == 0 {
+		return r.getTaskByID(ctx, taskID)
+	}
+
+	updateQuery := "UPDATE tasks SET " + strings.Join(setClauses, ", ") + " WHERE id = ?"
+	args = append(args, taskID)
+
+	if _, err := r.db.ExecContext(ctx, updateQuery, args...); err != nil {
+		// Handle race condition where parent was deleted between existence check and update.
+		if isParentForeignKeyError(err) {
+			return domain.Task{}, domain.ErrTaskNotFound
+		}
+		return domain.Task{}, err
+	}
+
+	return r.getTaskByID(ctx, taskID)
+}
+
 func (r *TaskRepository) taskExists(ctx context.Context, taskID uint64) (bool, error) {
 	var id uint64
 	if err := r.db.GetContext(ctx, &id, taskExistsQuery, taskID); err != nil {

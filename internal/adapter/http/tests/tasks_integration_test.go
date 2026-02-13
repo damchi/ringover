@@ -256,3 +256,76 @@ func (s *TasksIntegrationSuite) TestPostTasks_ReturnsBadRequestWhenStatusIsInval
 	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
 	s.Require().Equal("Invalid task payload", got.ErrDetails.Message)
 }
+
+func (s *TasksIntegrationSuite) TestPatchTasks_UpdatesTask() {
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{
+		"title":"Task updated from patch",
+		"status":"done",
+		"priority":1
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusOK, rec.Code)
+
+	var got dto.TaskItem
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(uint64(1), got.ID)
+	s.Require().Equal("Task updated from patch", got.Title)
+	s.Require().Equal("done", got.Status)
+	s.Require().Equal(1, got.Priority)
+
+	var row struct {
+		Title    string `db:"title"`
+		Status   string `db:"status"`
+		Priority int    `db:"priority"`
+	}
+	err := s.DB.Get(&row, "SELECT title, status, priority FROM tasks WHERE id = 1")
+	s.Require().NoError(err)
+	s.Require().Equal("Task updated from patch", row.Title)
+	s.Require().Equal("done", row.Status)
+	s.Require().Equal(1, row.Priority)
+}
+
+func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsBadRequestWhenIDIsInvalid() {
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/abc", strings.NewReader(`{"title":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
+	s.Require().Equal("Invalid id", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsBadRequestWhenPayloadIsInvalid() {
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusBadRequest, got.ErrDetails.Code)
+	s.Require().Equal("Invalid task payload", got.ErrDetails.Message)
+}
+
+func (s *TasksIntegrationSuite) TestPatchTasks_ReturnsNotFoundWhenTaskDoesNotExist() {
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/999999", strings.NewReader(`{"title":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	s.Require().Equal(http.StatusNotFound, rec.Code)
+
+	var got apierrors.JsonErr
+	s.Require().NoError(json.Unmarshal(rec.Body.Bytes(), &got))
+	s.Require().Equal(http.StatusNotFound, got.ErrDetails.Code)
+	s.Require().Equal("Task not found", got.ErrDetails.Message)
+}

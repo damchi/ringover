@@ -182,6 +182,76 @@ paths:
                 error:
                   code: 500
                   message: Error fetching the subtasks
+  /api/tasks/{id}:
+    patch:
+      tags:
+        - Tasks
+      summary: Update a task
+      description: Partially updates a task by id.
+      operationId: updateTask
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+          description: Task id.
+        - in: header
+          name: Accept-Language
+          required: false
+          schema:
+            type: string
+            example: en
+          description: Language used to translate error messages.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskRequest"
+            example:
+              title: Task updated from patch
+              status: done
+              priority: 1
+      responses:
+        "200":
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskItem"
+        "400":
+          description: Invalid payload or invalid task id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 400
+                  message: Invalid task payload
+        "404":
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 404
+                  message: Task not found
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: 500
+                  message: Failed to update task
   /api/health:
     get:
       tags:
@@ -380,6 +450,42 @@ components:
           format: date
           nullable: true
           example: "2026-02-20"
+        parent_task_id:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+        category_id:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+    UpdateTaskRequest:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          maxLength: 65535
+        status:
+          type: string
+          enum:
+            - todo
+            - in_progress
+            - done
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 127
+        due_date:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-03-18"
         parent_task_id:
           type: integer
           format: int64

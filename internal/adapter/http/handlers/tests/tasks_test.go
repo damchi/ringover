@@ -56,6 +56,16 @@ func (m *taskServiceMock) CreateTask(ctx context.Context, input domain.CreateTas
 	return task, args.Error(1)
 }
 
+func (m *taskServiceMock) UpdateTask(ctx context.Context, taskID uint64, input domain.UpdateTaskInput) (domain.Task, error) {
+	args := m.Called(ctx, taskID, input)
+
+	var task domain.Task
+	if value := args.Get(0); value != nil {
+		task = value.(domain.Task)
+	}
+	return task, args.Error(1)
+}
+
 func TestTaskHandler_ListRootTasks_Success(t *testing.T) {
 	description := "ship endpoint"
 	dueDate := time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC)
@@ -482,5 +492,148 @@ func TestTaskHandler_CreateTask_Error(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, http.StatusInternalServerError, got.ErrDetails.Code)
 	require.Equal(t, "Failed to create task", got.ErrDetails.Message)
+	serviceMock.AssertExpectations(t)
+}
+
+func TestTaskHandler_UpdateTask_Success(t *testing.T) {
+	createdAt := time.Date(2026, 2, 13, 10, 20, 30, 0, time.UTC)
+	updatedAt := time.Date(2026, 2, 13, 11, 20, 30, 0, time.UTC)
+
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("UpdateTask", mock.Anything, uint64(1), mock.MatchedBy(func(input domain.UpdateTaskInput) bool {
+		if input.Title == nil || *input.Title != "Updated task title" {
+			return false
+		}
+		if input.Status == nil || *input.Status != domain.TaskStatusDone {
+			return false
+		}
+		return true
+	})).Return(
+		domain.Task{
+			ID:        1,
+			Title:     "Updated task title",
+			Status:    domain.TaskStatusDone,
+			Priority:  1,
+			CreatedAt: createdAt,
+			UpdatedAt: updatedAt,
+		},
+		nil,
+	).Once()
+
+	handler := handlers.NewTaskHandler(serviceMock)
+	router := gin.New()
+	router.PATCH("/api/tasks/:id", middleware.LanguageMiddleware(), handler.UpdateTask)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{
+		"title":"Updated task title",
+		"status":"done",
+		"priority":1
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got dto.TaskItem
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, uint64(1), got.ID)
+	require.Equal(t, "Updated task title", got.Title)
+	require.Equal(t, "done", got.Status)
+	require.Equal(t, 1, got.Priority)
+	serviceMock.AssertExpectations(t)
+}
+
+func TestTaskHandler_UpdateTask_InvalidTaskID(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.PATCH("/api/tasks/:id", middleware.LanguageMiddleware(), handler.UpdateTask)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/abc", strings.NewReader(`{"title":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusBadRequest, got.ErrDetails.Code)
+	require.Equal(t, "Invalid id", got.ErrDetails.Message)
+}
+
+func TestTaskHandler_UpdateTask_InvalidPayload(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.PATCH("/api/tasks/:id", middleware.LanguageMiddleware(), handler.UpdateTask)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusBadRequest, got.ErrDetails.Code)
+	require.Equal(t, "Invalid task payload", got.ErrDetails.Message)
+}
+
+func TestTaskHandler_UpdateTask_NotFound(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("UpdateTask", mock.Anything, uint64(999), mock.Anything).Return(domain.Task{}, domain.ErrTaskNotFound).Once()
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.PATCH("/api/tasks/:id", middleware.LanguageMiddleware(), handler.UpdateTask)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/999", strings.NewReader(`{"title":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusNotFound, got.ErrDetails.Code)
+	require.Equal(t, "Task not found", got.ErrDetails.Message)
+	serviceMock.AssertExpectations(t)
+}
+
+func TestTaskHandler_UpdateTask_Error(t *testing.T) {
+	serviceMock := new(taskServiceMock)
+	serviceMock.On("UpdateTask", mock.Anything, uint64(1), mock.Anything).Return(domain.Task{}, errors.New("db is down")).Once()
+	handler := handlers.NewTaskHandler(serviceMock)
+
+	router := gin.New()
+	router.PATCH("/api/tasks/:id", middleware.LanguageMiddleware(), handler.UpdateTask)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/tasks/1", strings.NewReader(`{"title":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", translator.LanguageEn)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+
+	var got apierrors.JsonErr
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, http.StatusInternalServerError, got.ErrDetails.Code)
+	require.Equal(t, "Failed to update task", got.ErrDetails.Message)
 	serviceMock.AssertExpectations(t)
 }

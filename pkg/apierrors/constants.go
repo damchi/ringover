@@ -7,4 +7,5 @@ const (
 	MsgTaskNotFound       = "taskNotFound"
 	MsgFailListSubtasks   = "failListSubtasks"
 	MsgFailCreateTask     = "failCreateTask"
+	MsgFailUpdateTask     = "failUpdateTask"
 )
