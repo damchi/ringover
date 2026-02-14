@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,6 +11,7 @@ import (
 
 	"ringover/internal/adapter/http/dto"
 	"ringover/internal/adapter/http/handlers"
+	"ringover/internal/adapter/http/handlers/tests/mocks"
 	"ringover/internal/adapter/http/middleware"
 	"ringover/internal/core/domain"
 	"ringover/pkg/apierrors"
@@ -22,55 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type taskServiceMock struct {
-	mock.Mock
-}
-
-func (m *taskServiceMock) ListRootTasks(ctx context.Context) ([]domain.Task, error) {
-	args := m.Called(ctx)
-
-	var tasks []domain.Task
-	if value := args.Get(0); value != nil {
-		tasks = value.([]domain.Task)
-	}
-	return tasks, args.Error(1)
-}
-
-func (m *taskServiceMock) ListRootSubtasks(ctx context.Context, taskID uint64) ([]domain.Task, error) {
-	args := m.Called(ctx, taskID)
-
-	var tasks []domain.Task
-	if value := args.Get(0); value != nil {
-		tasks = value.([]domain.Task)
-	}
-	return tasks, args.Error(1)
-}
-
-func (m *taskServiceMock) CreateTask(ctx context.Context, input domain.CreateTaskInput) (domain.Task, error) {
-	args := m.Called(ctx, input)
-
-	var task domain.Task
-	if value := args.Get(0); value != nil {
-		task = value.(domain.Task)
-	}
-	return task, args.Error(1)
-}
-
-func (m *taskServiceMock) UpdateTask(ctx context.Context, taskID uint64, input domain.UpdateTaskInput) (domain.Task, error) {
-	args := m.Called(ctx, taskID, input)
-
-	var task domain.Task
-	if value := args.Get(0); value != nil {
-		task = value.(domain.Task)
-	}
-	return task, args.Error(1)
-}
-
-func (m *taskServiceMock) DeleteTask(ctx context.Context, taskID uint64) error {
-	args := m.Called(ctx, taskID)
-	return args.Error(0)
-}
-
 func TestTaskHandler_ListRootTasks_Success(t *testing.T) {
 	description := "ship endpoint"
 	dueDate := time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC)
@@ -78,7 +29,7 @@ func TestTaskHandler_ListRootTasks_Success(t *testing.T) {
 	updatedAt := time.Date(2026, 2, 13, 11, 20, 30, 0, time.UTC)
 	completedAt := time.Date(2026, 2, 19, 11, 20, 30, 0, time.UTC)
 
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("ListRootTasks", mock.Anything).Return(
 		[]domain.Task{
 			{
@@ -132,7 +83,7 @@ func TestTaskHandler_ListRootTasks_Success(t *testing.T) {
 }
 
 func TestTaskHandler_ListRootTasks_Error(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("ListRootTasks", mock.Anything).Return(nil, errors.New("db is down")).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -158,7 +109,7 @@ func TestTaskHandler_ListRootSubTasks_Success(t *testing.T) {
 	createdAt := time.Date(2026, 2, 13, 10, 20, 30, 0, time.UTC)
 	updatedAt := time.Date(2026, 2, 13, 11, 20, 30, 0, time.UTC)
 
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("ListRootSubtasks", mock.Anything, uint64(1)).Return(
 		[]domain.Task{
 			{
@@ -215,7 +166,7 @@ func TestTaskHandler_ListRootSubTasks_Success(t *testing.T) {
 }
 
 func TestTaskHandler_ListRootSubTasks_InvalidTaskID(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	handler := handlers.NewTaskHandler(serviceMock)
 
 	router := gin.New()
@@ -236,7 +187,7 @@ func TestTaskHandler_ListRootSubTasks_InvalidTaskID(t *testing.T) {
 }
 
 func TestTaskHandler_ListRootSubTasks_NotFound(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("ListRootSubtasks", mock.Anything, uint64(999)).Return(nil, domain.ErrTaskNotFound).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -259,7 +210,7 @@ func TestTaskHandler_ListRootSubTasks_NotFound(t *testing.T) {
 }
 
 func TestTaskHandler_ListRootSubTasks_Error(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("ListRootSubtasks", mock.Anything, uint64(1)).Return(nil, errors.New("db is down")).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -286,7 +237,7 @@ func TestTaskHandler_CreateTask_Success(t *testing.T) {
 	updatedAt := time.Date(2026, 2, 13, 11, 20, 30, 0, time.UTC)
 	dueDate := time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC)
 
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("CreateTask", mock.Anything, mock.MatchedBy(func(input domain.CreateTaskInput) bool {
 		if input.Title != "Build interview API" {
 			return false
@@ -351,7 +302,7 @@ func TestTaskHandler_CreateTask_Success(t *testing.T) {
 }
 
 func TestTaskHandler_CreateTask_InvalidPayload(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	handler := handlers.NewTaskHandler(serviceMock)
 
 	router := gin.New()
@@ -373,7 +324,7 @@ func TestTaskHandler_CreateTask_InvalidPayload(t *testing.T) {
 }
 
 func TestTaskHandler_CreateTask_InvalidDueDate(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	handler := handlers.NewTaskHandler(serviceMock)
 
 	router := gin.New()
@@ -398,7 +349,7 @@ func TestTaskHandler_CreateTask_InvalidDueDate(t *testing.T) {
 }
 
 func TestTaskHandler_CreateTask_InvalidStatus(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	handler := handlers.NewTaskHandler(serviceMock)
 
 	router := gin.New()
@@ -423,7 +374,7 @@ func TestTaskHandler_CreateTask_InvalidStatus(t *testing.T) {
 }
 
 func TestTaskHandler_CreateTask_InvalidNullStatus(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	handler := handlers.NewTaskHandler(serviceMock)
 
 	router := gin.New()
@@ -448,7 +399,7 @@ func TestTaskHandler_CreateTask_InvalidNullStatus(t *testing.T) {
 }
 
 func TestTaskHandler_CreateTask_InvalidPriority(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	handler := handlers.NewTaskHandler(serviceMock)
 
 	router := gin.New()
@@ -473,7 +424,7 @@ func TestTaskHandler_CreateTask_InvalidPriority(t *testing.T) {
 }
 
 func TestTaskHandler_CreateTask_InvalidNullPriority(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	handler := handlers.NewTaskHandler(serviceMock)
 
 	router := gin.New()
@@ -501,7 +452,7 @@ func TestTaskHandler_CreateTask_UnknownFieldIsIgnored(t *testing.T) {
 	createdAt := time.Date(2026, 2, 13, 10, 20, 30, 0, time.UTC)
 	updatedAt := time.Date(2026, 2, 13, 11, 20, 30, 0, time.UTC)
 
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("CreateTask", mock.Anything, mock.MatchedBy(func(input domain.CreateTaskInput) bool {
 		return input.Title == "Build interview API" &&
 			input.Status == domain.TaskStatusTodo &&
@@ -545,7 +496,7 @@ func TestTaskHandler_CreateTask_UnknownFieldIsIgnored(t *testing.T) {
 }
 
 func TestTaskHandler_CreateTask_NotFound(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("CreateTask", mock.Anything, mock.Anything).Return(domain.Task{}, domain.ErrTaskNotFound).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -572,7 +523,7 @@ func TestTaskHandler_CreateTask_NotFound(t *testing.T) {
 }
 
 func TestTaskHandler_CreateTask_CategoryNotFound(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("CreateTask", mock.Anything, mock.Anything).Return(domain.Task{}, domain.ErrCategoryNotFound).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -599,7 +550,7 @@ func TestTaskHandler_CreateTask_CategoryNotFound(t *testing.T) {
 }
 
 func TestTaskHandler_CreateTask_Error(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("CreateTask", mock.Anything, mock.Anything).Return(domain.Task{}, errors.New("db is down")).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -628,7 +579,7 @@ func TestTaskHandler_UpdateTask_Success(t *testing.T) {
 	createdAt := time.Date(2026, 2, 13, 10, 20, 30, 0, time.UTC)
 	updatedAt := time.Date(2026, 2, 13, 11, 20, 30, 0, time.UTC)
 
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("UpdateTask", mock.Anything, uint64(1), mock.MatchedBy(func(input domain.UpdateTaskInput) bool {
 		if input.Title == nil || *input.Title != "Updated task title" {
 			return false
@@ -676,7 +627,7 @@ func TestTaskHandler_UpdateTask_Success(t *testing.T) {
 }
 
 func TestTaskHandler_UpdateTask_InvalidTaskID(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	handler := handlers.NewTaskHandler(serviceMock)
 
 	router := gin.New()
@@ -698,7 +649,7 @@ func TestTaskHandler_UpdateTask_InvalidTaskID(t *testing.T) {
 }
 
 func TestTaskHandler_UpdateTask_InvalidPayload(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	handler := handlers.NewTaskHandler(serviceMock)
 
 	router := gin.New()
@@ -720,7 +671,7 @@ func TestTaskHandler_UpdateTask_InvalidPayload(t *testing.T) {
 }
 
 func TestTaskHandler_UpdateTask_InvalidNullStatus(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	handler := handlers.NewTaskHandler(serviceMock)
 
 	router := gin.New()
@@ -745,7 +696,7 @@ func TestTaskHandler_UpdateTask_UnknownFieldIsIgnored(t *testing.T) {
 	createdAt := time.Date(2026, 2, 13, 10, 20, 30, 0, time.UTC)
 	updatedAt := time.Date(2026, 2, 13, 11, 20, 30, 0, time.UTC)
 
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("UpdateTask", mock.Anything, uint64(1), mock.MatchedBy(func(input domain.UpdateTaskInput) bool {
 		return input.Title != nil && *input.Title == "x"
 	})).Return(
@@ -781,7 +732,7 @@ func TestTaskHandler_UpdateTask_UnknownFieldIsIgnored(t *testing.T) {
 }
 
 func TestTaskHandler_UpdateTask_NotFound(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("UpdateTask", mock.Anything, uint64(999), mock.Anything).Return(domain.Task{}, domain.ErrTaskNotFound).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -805,7 +756,7 @@ func TestTaskHandler_UpdateTask_NotFound(t *testing.T) {
 }
 
 func TestTaskHandler_UpdateTask_CategoryNotFound(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("UpdateTask", mock.Anything, uint64(1), mock.Anything).Return(domain.Task{}, domain.ErrCategoryNotFound).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -829,7 +780,7 @@ func TestTaskHandler_UpdateTask_CategoryNotFound(t *testing.T) {
 }
 
 func TestTaskHandler_UpdateTask_InvalidTaskHierarchy(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("UpdateTask", mock.Anything, uint64(1), mock.Anything).Return(domain.Task{}, domain.ErrTaskHierarchyCycle).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -853,7 +804,7 @@ func TestTaskHandler_UpdateTask_InvalidTaskHierarchy(t *testing.T) {
 }
 
 func TestTaskHandler_UpdateTask_Error(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("UpdateTask", mock.Anything, uint64(1), mock.Anything).Return(domain.Task{}, errors.New("db is down")).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -877,7 +828,7 @@ func TestTaskHandler_UpdateTask_Error(t *testing.T) {
 }
 
 func TestTaskHandler_DeleteTask_Success(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("DeleteTask", mock.Anything, uint64(1)).Return(nil).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -896,7 +847,7 @@ func TestTaskHandler_DeleteTask_Success(t *testing.T) {
 }
 
 func TestTaskHandler_DeleteTask_InvalidTaskID(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	handler := handlers.NewTaskHandler(serviceMock)
 
 	router := gin.New()
@@ -917,7 +868,7 @@ func TestTaskHandler_DeleteTask_InvalidTaskID(t *testing.T) {
 }
 
 func TestTaskHandler_DeleteTask_NotFound(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("DeleteTask", mock.Anything, uint64(999)).Return(domain.ErrTaskNotFound).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
@@ -940,7 +891,7 @@ func TestTaskHandler_DeleteTask_NotFound(t *testing.T) {
 }
 
 func TestTaskHandler_DeleteTask_Error(t *testing.T) {
-	serviceMock := new(taskServiceMock)
+	serviceMock := mocks.NewTaskService(t)
 	serviceMock.On("DeleteTask", mock.Anything, uint64(1)).Return(errors.New("db is down")).Once()
 	handler := handlers.NewTaskHandler(serviceMock)
 
